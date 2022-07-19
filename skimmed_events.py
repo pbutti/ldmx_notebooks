@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 executor = concurrent.futures.ThreadPoolExecutor(8)
 import glob
-files = glob.glob('kaons/4gev_1e_tskim_v12_kaons_ldmx-det-v12*.root')
+files = glob.glob('4gev_1e_tskim_v12_kaons_ldmx-det-v12*.root')
 
 # radius of containment for each ECal layer
 radius_beam_68 = [4.73798004, 4.80501156, 4.77108164, 4.53839401, 4.73273021,
@@ -201,7 +201,7 @@ for filename in files:
         ptraj_front = np.array(trajectories['ptraj_sp']) 
 
         # obtain the event's e- trajectory layer intercepts
-        
+        eLayerIntercepts = []
         intercept = (trajectories['etraj_sp'][event][0] + layer_dz*trajectories['enorm_sp'][event][0], 
                     trajectories['etraj_sp'][event][1] + layer_dz*trajectories['enorm_sp'][event][1], 
                     trajectories['etraj_sp'][event][2] + layer_dz*trajectories['enorm_sp'][event][2])
@@ -278,7 +278,7 @@ for filename in files:
     tree.Branch("electronY",electronY)
     tree.Branch("electronZ",electronZ)
 
-    for event in range(len()):
+    for event in range(len(eventsX)):
         hitX.clear()
         hitY.clear()
         hitZ.clear()
@@ -290,12 +290,13 @@ for filename in files:
         electronY.clear()
         electronZ.clear()
 
-        photonX.push_back(pTrajX[event])
-        photonY.push_back(pTrajY[event])
-        photonZ.push_back(pTrajZ[event])
-        electronX.push_back(eTrajX[event])
-        electronY.push_back(eTrajY[event])
-        electronZ.push_back(eTrajZ[event])
+        for layer in range(34):
+            photonX.push_back(pTrajX[event][layer])
+            photonY.push_back(pTrajY[event][layer])
+            photonZ.push_back(pTrajZ[event][layer])
+            electronX.push_back(eTrajX[event][layer])
+            electronY.push_back(eTrajY[event][layer])
+            electronZ.push_back(eTrajZ[event][layer])
 
         for hit in range(len(eventsX[event])):
             hitX.push_back(eventsX[event][hit])
