@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 executor = concurrent.futures.ThreadPoolExecutor(8)
 import glob
-files = glob.glob('4gev_1e_tskim_v12_kaons_ldmx-det-v12*.root')
+files = glob.glob('kaons/1/*.root')
 
 # radius of containment for each ECal layer
 radius_beam_68 = [4.73798004, 4.80501156, 4.77108164, 4.53839401, 4.73273021,
@@ -60,8 +60,7 @@ branches.append('EventHeader/eventNumber_')
 #print (branches)
 
 filenum = 0
-
-for filename in files:
+for filename in files:    
     print("Processing file {}".format(filename))
     output_path = "skimmed_kaons/skimmed_kaons_{}.root".format(filenum)
     filenum += 1
@@ -82,6 +81,7 @@ for filename in files:
         events +=1
         eventNumbers.append(tree['EventHeader/eventNumber_'][event])
 
+    print("Calculating the electron and photon trajectories")
     # calculate the electron and photon trajectories
 
     # we will store the data for the trajectory positions inside this dictionary:
@@ -91,6 +91,7 @@ for filename in files:
     b3 = []
     b4 = []
 
+    NoTrajectories = []
     # loop through all of the events
     for i in range(len(tree['EventHeader/eventNumber_'])):
         tSPHits = {}
@@ -98,7 +99,7 @@ for filename in files:
         for x in ['x_', 'y_', 'z_', 'px_', 'py_', 'pz_', 'pdgID_', 'trackID_']:
             tSPHits[x] = (table['{}.{}'.format(tSP_branch, x)])[i]
             ecalSPHits[x] = (table['{}.{}'.format(ecalSP_branch, x)])[i]
-    
+
         # find the max pz at the target scoring plane for the recoil electron
         max_pz = 0
         r = 0
@@ -132,16 +133,25 @@ for filename in files:
             b4.append(ptraj_sp)
         else:
             etraj_sp, enorm_sp, ptraj_sp, pnorm_sp = None, None, None, None
+            NoTrajectories.append(i)
+            b1.append(etraj_sp)
+            b2.append(enorm_sp)
+            b3.append(pnorm_sp)
+            b4.append(ptraj_sp)
 
     # store the e- trajectory and its normal vector, store the photon trajectory and its normal vector
     trajectories['etraj_sp'] = b1
     trajectories['enorm_sp'] = b2
     trajectories['pnorm_sp'] = b3
     trajectories['ptraj_sp'] = b4
+    print("Events without a trajectory: {}".format(NoTrajectories))
 
+    print("Getting the PDG IDs of the hits")
     # get the PDG IDs of the hits
     Pdg_ID = []
-    for event in range(len(tree['EcalRecHits_v3_v12/EcalRecHits_v3_v12.xpos_'])):
+    for event in range(len(tree['EventHeader/eventNumber_'])):
+        if event % 10000 == 0:
+            print(event)
         # data from EcalSimHits
         sim_dict = {}
         for x in ['x_', 'y_', 'z_', 'pdgCodeContribs_', 'edepContribs_', 'incidentIDContribs_']:
@@ -155,31 +165,37 @@ for filename in files:
         rec_matched_ids = []
         rec_parent_ids = []
 
-        for j in range(len(ecal_dict['zpos_'])):
-            # For each hit:  Find a contrib w/ the same position, then match:
-            simIndex = None # EcalSimHit index
-            contribIndex = None # index of contribution within EcalSimHit
-            for k in range(len(sim_dict['x_'])):
-                if round(sim_dict['x_'][k]) == round(ecal_dict['xpos_'][j]) and \
-                    round(sim_dict['y_'][k]) == round(ecal_dict['ypos_'][j]) and \
-                    round(sim_dict['z_'][k]) == round(ecal_dict['zpos_'][j]):
-                    simIndex = k # we found a matching hit. 
-                    # now, go through the contribs and find the pdgID of the contrib w/ max edep:
-                    eDepMax = 0
-                    for l in range(len(sim_dict['edepContribs_'][k])):
-                        if sim_dict['edepContribs_'][k][l] > eDepMax:
-                            eDepMax = sim_dict['edepContribs_'][k][l]
-                            contribIndex = l
-            if not simIndex:  # If no EcalSimHit found, presumably noise; record
-                rec_matched_ids.append(-9999999)
-                rec_parent_ids.append(-9999999)
-            else:
-                rec_matched_ids.append(sim_dict['pdgCodeContribs_'][simIndex][contribIndex])
-                rec_parent_ids.append(sim_dict['incidentIDContribs_'][simIndex][contribIndex])
+        if event in NoTrajectories:
+            rec_matched_ids.append([])
+            
+        else:
+            for j in range(len(ecal_dict['zpos_'])):
+                # For each hit:  Find a contrib w/ the same position, then match:
+                simIndex = None # EcalSimHit index
+                contribIndex = None # index of contribution within EcalSimHit
+                for k in range(len(sim_dict['x_'])):
+                    if round(sim_dict['x_'][k]) == round(ecal_dict['xpos_'][j]) and \
+                        round(sim_dict['y_'][k]) == round(ecal_dict['ypos_'][j]) and \
+                        round(sim_dict['z_'][k]) == round(ecal_dict['zpos_'][j]):
+                        simIndex = k # we found a matching hit. 
+                        # now, go through the contribs and find the pdgID of the contrib w/ max edep:
+                        eDepMax = 0
+                        for l in range(len(sim_dict['edepContribs_'][k])):
+                            if sim_dict['edepContribs_'][k][l] > eDepMax:
+                                eDepMax = sim_dict['edepContribs_'][k][l]
+                                contribIndex = l
+                if not simIndex:  # If no EcalSimHit found, presumably noise; record
+                    rec_matched_ids.append(-9999999)
+                    rec_parent_ids.append(-9999999)
+                else:
+                    rec_matched_ids.append(sim_dict['pdgCodeContribs_'][simIndex][contribIndex])
+                    rec_parent_ids.append(sim_dict['incidentIDContribs_'][simIndex][contribIndex])
         Pdg_ID.append(rec_matched_ids)
 
     tree['Pdg_ID'] = Pdg_ID
 
+
+    print("Cutting all of the hits within the electron radius of containment")
     # loop through each event and cut all of the hits within electron containment radii
 
     # structure of these lists: [[event1 hits], [event 2 hits], ...] 
@@ -195,13 +211,16 @@ for filename in files:
     pTrajZ = []
 
     # loop through each event 
-    for event in range(len(tree['EcalRecHits_v3_v12/EcalRecHits_v3_v12.xpos_'])):
+    for event in range(len(tree['EventHeader/eventNumber_'])):
+        if event in NoTrajectories:
+            continue
         ecal_front = 240.5
         etraj_front = np.array(trajectories['etraj_sp']) 
         ptraj_front = np.array(trajectories['ptraj_sp']) 
 
         # obtain the event's e- trajectory layer intercepts
         eLayerIntercepts = []
+
         intercept = (trajectories['etraj_sp'][event][0] + layer_dz*trajectories['enorm_sp'][event][0], 
                     trajectories['etraj_sp'][event][1] + layer_dz*trajectories['enorm_sp'][event][1], 
                     trajectories['etraj_sp'][event][2] + layer_dz*trajectories['enorm_sp'][event][2])
@@ -249,6 +268,7 @@ for filename in files:
         eventsZ.append(hitsZ)
         pdgIDs.append(pdgids)
 
+    print("Making the ROOT File")
     import ROOT as r
     from array import array 
 
